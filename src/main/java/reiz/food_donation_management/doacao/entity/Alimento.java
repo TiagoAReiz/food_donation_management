@@ -43,4 +43,14 @@ public class Alimento {
     @Builder.Default
     @Column(name = "qtd_disponivel", nullable = false, precision = 10, scale = 2)
     private BigDecimal qtdDisponivel = BigDecimal.ZERO;
+
+    /** Quantidade reservada por solicitações aprovadas e ainda não entregues. */
+    @Builder.Default
+    @Column(name = "qtd_reservada", nullable = false, precision = 10, scale = 2)
+    private BigDecimal qtdReservada = BigDecimal.ZERO;
+
+    /** O que ainda pode ser pedido: disponível menos reservado. */
+    public BigDecimal getQtdLivre() {
+        return qtdDisponivel.subtract(qtdReservada);
+    }
 }

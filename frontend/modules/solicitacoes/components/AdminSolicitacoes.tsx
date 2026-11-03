@@ -37,7 +37,12 @@ function Pedido({ s, recarregar }: { s: SolicitacaoResponse; recarregar: () => v
         </div>
         <SituacaoSolicitacaoBadge valor={s.situacao} />
       </div>
-      <ItensDoPedido itens={s.itens} mostrarDisponivel={s.situacao === "PENDENTE" || s.situacao === "APROVADA"} />
+      <ItensDoPedido itens={s.itens} mostrarDisponivel={s.situacao === "PENDENTE"} />
+      {s.situacao === "APROVADA" && (
+        <p className="mt-2 text-base font-semibold text-blue-800">
+          Estes alimentos estão reservados para esta entidade até a entrega.
+        </p>
+      )}
       {s.situacao === "RECUSADA" && s.motivoRecusa && (
         <div className="mt-2">
           <Alerta tom="erro" titulo="Motivo da recusa">
@@ -56,9 +61,12 @@ function Pedido({ s, recarregar }: { s: SolicitacaoResponse; recarregar: () => v
         </div>
       )}
       {s.situacao === "APROVADA" && (
-        <div className="mt-3">
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <Button carregando={ocupado} onClick={() => entregar(s.id)} icone={<Truck size={20} />}>
             Registrar entrega
+          </Button>
+          <Button variante="fantasma" disabled={ocupado} onClick={() => recusar(s.id, true)} icone={<X size={20} />}>
+            Cancelar pedido
           </Button>
         </div>
       )}

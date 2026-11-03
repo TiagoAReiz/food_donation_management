@@ -16,17 +16,22 @@ public interface AlimentoRepository extends JpaRepository<Alimento, Integer> {
 
     String RECEBIDA = "d.situacao = reiz.food_donation_management.doacao.entity.SituacaoDoacao.RECEBIDA";
 
-    /** Estoque disponível em ordem FEFO (RN07). */
+    /** Estoque físico em ordem FEFO (RN07), inclusive lotes totalmente reservados. */
     @Query("select a from Alimento a join fetch a.doacao d where " + RECEBIDA
             + " and a.qtdDisponivel > 0 and a.validade >= :hoje order by a.validade asc, a.id asc")
     List<Alimento> findEstoque(@Param("hoje") LocalDate hoje);
+
+    /** Lotes com quantidade livre para novos pedidos, em ordem FEFO (RN07). */
+    @Query("select a from Alimento a join fetch a.doacao d where " + RECEBIDA
+            + " and a.qtdDisponivel > a.qtdReservada and a.validade >= :hoje order by a.validade asc, a.id asc")
+    List<Alimento> findEstoqueLivre(@Param("hoje") LocalDate hoje);
 
     @Query("select a from Alimento a join fetch a.doacao d where " + RECEBIDA
             + " and a.qtdDisponivel > 0 and a.validade < :hoje order by a.validade asc, a.id asc")
     List<Alimento> findVencidos(@Param("hoje") LocalDate hoje);
 
     @Query("select a from Alimento a join fetch a.doacao d where " + RECEBIDA
-            + " and a.id = :id and a.qtdDisponivel > 0 and a.validade >= :hoje")
+            + " and a.id = :id and a.qtdDisponivel > a.qtdReservada and a.validade >= :hoje")
     Optional<Alimento> findDisponivelById(@Param("id") Integer id, @Param("hoje") LocalDate hoje);
 
     @Query("select a from Alimento a join fetch a.doacao d where d.doador.usuario.id = :usuarioId "
@@ -40,6 +45,10 @@ public interface AlimentoRepository extends JpaRepository<Alimento, Integer> {
     @Query("select count(a) from Alimento a join a.doacao d where " + RECEBIDA
             + " and a.qtdDisponivel > 0 and a.validade >= :hoje")
     long countEstoque(@Param("hoje") LocalDate hoje);
+
+    @Query("select count(a) from Alimento a join a.doacao d where " + RECEBIDA
+            + " and a.qtdDisponivel > a.qtdReservada and a.validade >= :hoje")
+    long countEstoqueLivre(@Param("hoje") LocalDate hoje);
 
     @Query("select count(a) from Alimento a join a.doacao d where " + RECEBIDA
             + " and a.qtdDisponivel > 0 and a.validade < :hoje")

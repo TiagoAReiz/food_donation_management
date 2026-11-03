@@ -61,14 +61,22 @@ export function useAvaliarSolicitacao(aoConcluir: () => void) {
   const { ocupado, executar } = useAcao();
 
   const aprovar = async (id: number) => {
-    const r = await executar(() => solicitacaoService.aprovar(id), "Pedido aprovado!");
+    const ok = await confirmar({
+      titulo: "Aprovar este pedido?",
+      texto: "Os alimentos ficam reservados para esta entidade e deixam de aparecer para outros pedidos.",
+      rotulo: "Sim, aprovar",
+    });
+    if (!ok) return;
+    const r = await executar(() => solicitacaoService.aprovar(id), "Pedido aprovado e alimentos reservados!");
     if (r) aoConcluir();
   };
 
-  const recusar = async (id: number) => {
+  const recusar = async (id: number, aprovado = false) => {
     const motivo = await pedirMotivo({
-      titulo: "Recusar este pedido",
-      texto: "Explique à entidade por que o pedido não pode ser atendido.",
+      titulo: aprovado ? "Cancelar este pedido aprovado" : "Recusar este pedido",
+      texto: aprovado
+        ? "A reserva será desfeita e os alimentos voltam a ficar livres. Explique à entidade o motivo."
+        : "Explique à entidade por que o pedido não pode ser atendido.",
       rotulo: "Recusar pedido",
     });
     if (!motivo) return;

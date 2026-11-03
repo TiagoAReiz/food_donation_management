@@ -9,12 +9,17 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
+/**
+ * qtdDisponivel = livre para novos pedidos; qtdReservada = separada para pedidos aprovados;
+ * qtdEmEstoque = quantidade física (livre + reservada).
+ */
 public record EstoqueItemResponse(Integer id, String nome, Categoria categoria, BigDecimal qtdDisponivel,
-                                  Unidade unidade, LocalDate validade, Integer doacaoId, long diasParaVencer) {
+                                  BigDecimal qtdReservada, BigDecimal qtdEmEstoque, Unidade unidade,
+                                  LocalDate validade, Integer doacaoId, long diasParaVencer) {
 
     public static EstoqueItemResponse of(Alimento a) {
-        return new EstoqueItemResponse(a.getId(), a.getNome(), a.getCategoria(), a.getQtdDisponivel(),
-                a.getUnidade(), a.getValidade(), a.getDoacao().getId(),
+        return new EstoqueItemResponse(a.getId(), a.getNome(), a.getCategoria(), a.getQtdLivre(),
+                a.getQtdReservada(), a.getQtdDisponivel(), a.getUnidade(), a.getValidade(), a.getDoacao().getId(),
                 ChronoUnit.DAYS.between(DataUtil.hoje(), a.getValidade()));
     }
 }

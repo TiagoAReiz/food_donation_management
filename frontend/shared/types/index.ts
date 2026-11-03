@@ -96,7 +96,12 @@ export interface EstoqueItemResponse {
   id: number;
   nome: string;
   categoria: Categoria;
+  /** Livre para novos pedidos (em estoque menos reservado). */
   qtdDisponivel: number;
+  /** Separado para pedidos aprovados que ainda não foram entregues. */
+  qtdReservada: number;
+  /** Quantidade física no estoque. */
+  qtdEmEstoque: number;
   unidade: Unidade;
   validade: string;
   doacaoId: number;

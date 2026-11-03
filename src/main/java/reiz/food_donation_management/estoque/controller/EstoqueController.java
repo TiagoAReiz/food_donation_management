@@ -3,11 +3,15 @@ package reiz.food_donation_management.estoque.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import reiz.food_donation_management.common.config.UsuarioLogado;
 import reiz.food_donation_management.estoque.dto.AjusteEstoqueRequest;
 import reiz.food_donation_management.estoque.dto.EstoqueItemResponse;
 import reiz.food_donation_management.estoque.dto.RetiradaRequest;
 import reiz.food_donation_management.estoque.service.EstoqueService;
+
+import reiz.food_donation_management.usuario.entity.Perfil;
 
 import java.util.List;
 
@@ -20,8 +24,8 @@ public class EstoqueController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMINISTRADOR','ENTIDADE')")
-    public List<EstoqueItemResponse> listar() {
-        return service.listar();
+    public List<EstoqueItemResponse> listar(@AuthenticationPrincipal UsuarioLogado usuario) {
+        return usuario.perfil() == Perfil.ADMINISTRADOR ? service.listar() : service.listarLivre();
     }
 
     @GetMapping("/vencidos")
@@ -34,7 +38,7 @@ public class EstoqueController {
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public EstoqueItemResponse ajustar(@PathVariable Integer alimentoId,
                                        @Valid @RequestBody AjusteEstoqueRequest req) {
-        return service.ajustar(alimentoId, req.qtdDisponivel());
+        return service.ajustar(alimentoId, req.qtdEmEstoque());
     }
 
     @PostMapping("/{alimentoId}/retirar")

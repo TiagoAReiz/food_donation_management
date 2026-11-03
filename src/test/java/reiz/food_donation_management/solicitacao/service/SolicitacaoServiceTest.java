@@ -95,21 +95,35 @@ class SolicitacaoServiceTest {
         assertEquals("Quantidade pedida de Arroz (15 kg) maior que a disponível (10 kg).", e.getMessage());
     }
 
+    private Alimento arroz(String disponivel, String reservada, LocalDate validade) {
+        Alimento a = arroz(disponivel, validade);
+        a.setQtdReservada(new BigDecimal(reservada));
+        return a;
+    }
+
+    private void travar(Solicitacao s, Alimento lote) {
+        when(solicitacaoRepository.findByIdForUpdate(9)).thenReturn(Optional.of(s));
+        when(alimentoRepository.findAllByIdForUpdate(anyCollection())).thenReturn(List.of(lote));
+    }
+
     @Test
     void rn06_naoAprovaQuandoPedidoMaiorQueDisponivel() {
-        Solicitacao s = solicitacao(SituacaoSolicitacao.PENDENTE, arroz("10", DataUtil.hoje().plusDays(5)), "15");
-        when(solicitacaoRepository.findByIdForUpdate(9)).thenReturn(Optional.of(s));
+        Alimento lote = arroz("10", DataUtil.hoje().plusDays(5));
+        Solicitacao s = solicitacao(SituacaoSolicitacao.PENDENTE, lote, "15");
+        travar(s, lote);
 
         var e = assertThrows(NegocioException.class, () -> service.aprovar(1, 9));
 
         assertEquals("Quantidade pedida de Arroz (15 kg) maior que a disponível (10 kg).", e.getMessage());
         assertEquals(SituacaoSolicitacao.PENDENTE, s.getSituacao());
+        assertEquals(0, BigDecimal.ZERO.compareTo(lote.getQtdReservada()));
     }
 
     @Test
     void rn06_naoAprovaLoteVencido() {
-        Solicitacao s = solicitacao(SituacaoSolicitacao.PENDENTE, arroz("10", DataUtil.hoje().minusDays(1)), "5");
-        when(solicitacaoRepository.findByIdForUpdate(9)).thenReturn(Optional.of(s));
+        Alimento lote = arroz("10", DataUtil.hoje().minusDays(1));
+        Solicitacao s = solicitacao(SituacaoSolicitacao.PENDENTE, lote, "5");
+        travar(s, lote);
 
         var e = assertThrows(NegocioException.class, () -> service.aprovar(1, 9));
 
@@ -117,34 +131,48 @@ class SolicitacaoServiceTest {
     }
 
     @Test
-    void aprovaQuandoTudoCabe() {
-        Solicitacao s = solicitacao(SituacaoSolicitacao.PENDENTE, arroz("10", DataUtil.hoje().plusDays(5)), "10");
-        when(solicitacaoRepository.findByIdForUpdate(9)).thenReturn(Optional.of(s));
+    void aprovarReservaAQuantidade() {
+        Alimento lote = arroz("10", DataUtil.hoje().plusDays(5));
+        Solicitacao s = solicitacao(SituacaoSolicitacao.PENDENTE, lote, "4");
+        travar(s, lote);
         when(solicitacaoRepository.save(any(Solicitacao.class))).thenAnswer(i -> i.getArgument(0));
 
         assertEquals(SituacaoSolicitacao.APROVADA, service.aprovar(1, 9).situacao());
+        assertEquals(0, new BigDecimal("4").compareTo(lote.getQtdReservada()));
+        assertEquals(0, new BigDecimal("10").compareTo(lote.getQtdDisponivel()));
+        assertEquals(0, new BigDecimal("6").compareTo(lote.getQtdLivre()));
     }
 
     @Test
-    void rn06_entregaRevalidaComLockEBloqueiaSeFaltar() {
-        Alimento lote = arroz("3", DataUtil.hoje().plusDays(5));
-        Solicitacao s = solicitacao(SituacaoSolicitacao.APROVADA, lote, "5");
-        when(solicitacaoRepository.findByIdForUpdate(9)).thenReturn(Optional.of(s));
-        when(alimentoRepository.findAllByIdForUpdate(anyCollection())).thenReturn(List.of(lote));
+    void naoAprovaAlemDoQueEstaLivre_semOverselling() {
+        // 10 kg no lote, 8 já reservados para outro pedido aprovado: só 2 kg livres
+        Alimento lote = arroz("10", "8", DataUtil.hoje().plusDays(5));
+        Solicitacao s = solicitacao(SituacaoSolicitacao.PENDENTE, lote, "5");
+        travar(s, lote);
 
-        var e = assertThrows(NegocioException.class, () -> service.entregar(9));
+        var e = assertThrows(NegocioException.class, () -> service.aprovar(1, 9));
 
-        assertEquals("Quantidade pedida de Arroz (5 kg) maior que a disponível (3 kg).", e.getMessage());
-        assertEquals(new BigDecimal("3"), lote.getQtdDisponivel());
-        assertEquals(SituacaoSolicitacao.APROVADA, s.getSituacao());
+        assertEquals("Quantidade pedida de Arroz (5 kg) maior que a disponível (2 kg).", e.getMessage());
+        assertEquals(0, new BigDecimal("8").compareTo(lote.getQtdReservada()));
     }
 
     @Test
-    void entregaDaBaixaNoEstoque() {
-        Alimento lote = arroz("10", DataUtil.hoje().plusDays(5));
+    void criarSolicitacaoConsideraSoOLivre() {
+        when(entidadeRepository.findByUsuarioId(20)).thenReturn(Optional.of(entidade(true)));
+        when(alimentoRepository.findDisponivelById(eq3(), any()))
+                .thenReturn(Optional.of(arroz("10", "7", DataUtil.hoje().plusDays(5))));
+
+        var req = new SolicitacaoRequest(List.of(new SolicitacaoRequest.Item(3, new BigDecimal("4"))));
+        var e = assertThrows(NegocioException.class, () -> service.criar(20, req));
+
+        assertEquals("Quantidade pedida de Arroz (4 kg) maior que a disponível (3 kg).", e.getMessage());
+    }
+
+    @Test
+    void entregaConsomeAReservaEDaBaixa() {
+        Alimento lote = arroz("10", "4", DataUtil.hoje().plusDays(5));
         Solicitacao s = solicitacao(SituacaoSolicitacao.APROVADA, lote, "4");
-        when(solicitacaoRepository.findByIdForUpdate(9)).thenReturn(Optional.of(s));
-        when(alimentoRepository.findAllByIdForUpdate(anyCollection())).thenReturn(List.of(lote));
+        travar(s, lote);
         when(solicitacaoRepository.save(any(Solicitacao.class))).thenAnswer(i -> i.getArgument(0));
 
         SolicitacaoResponse resp = service.entregar(9);
@@ -152,6 +180,43 @@ class SolicitacaoServiceTest {
         assertEquals(SituacaoSolicitacao.ENTREGUE, resp.situacao());
         assertEquals(DataUtil.hoje(), resp.dataEntrega());
         assertEquals(0, new BigDecimal("6").compareTo(lote.getQtdDisponivel()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(lote.getQtdReservada()));
+    }
+
+    @Test
+    void entregaBloqueiaSeOLoteFoiRetiradoDepoisDaAprovacao() {
+        Alimento lote = arroz("0", "0", DataUtil.hoje().plusDays(5));
+        Solicitacao s = solicitacao(SituacaoSolicitacao.APROVADA, lote, "5");
+        travar(s, lote);
+
+        var e = assertThrows(NegocioException.class, () -> service.entregar(9));
+
+        assertEquals("Quantidade pedida de Arroz (5 kg) maior que a disponível (0 kg).", e.getMessage());
+        assertEquals(SituacaoSolicitacao.APROVADA, s.getSituacao());
+    }
+
+    @Test
+    void recusarAprovadaLiberaAReserva() {
+        Alimento lote = arroz("10", "4", DataUtil.hoje().plusDays(5));
+        Solicitacao s = solicitacao(SituacaoSolicitacao.APROVADA, lote, "4");
+        travar(s, lote);
+        when(solicitacaoRepository.save(any(Solicitacao.class))).thenAnswer(i -> i.getArgument(0));
+
+        assertEquals(SituacaoSolicitacao.RECUSADA, service.recusar(1, 9, "Entidade não veio buscar").situacao());
+        assertEquals(0, BigDecimal.ZERO.compareTo(lote.getQtdReservada()));
+        assertEquals(0, new BigDecimal("10").compareTo(lote.getQtdDisponivel()));
+    }
+
+    @Test
+    void recusarPendenteNaoMexeNoEstoque() {
+        Alimento lote = arroz("10", DataUtil.hoje().plusDays(5));
+        Solicitacao s = solicitacao(SituacaoSolicitacao.PENDENTE, lote, "4");
+        when(solicitacaoRepository.findByIdForUpdate(9)).thenReturn(Optional.of(s));
+        when(solicitacaoRepository.save(any(Solicitacao.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.recusar(1, 9, "Sem necessidade");
+
+        verify(alimentoRepository, never()).findAllByIdForUpdate(anyCollection());
     }
 
     @Test

@@ -20,6 +20,7 @@ import reiz.food_donation_management.solicitacao.repository.SolicitacaoRepositor
 import reiz.food_donation_management.usuario.entity.Perfil;
 import reiz.food_donation_management.usuario.repository.UsuarioRepository;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.function.Function;
@@ -98,39 +99,57 @@ public class SolicitacaoService {
         return SolicitacaoResponse.of(solicitacaoRepository.save(solicitacao));
     }
 
-    /** RN06: cada item precisa caber na quantidade disponível do lote. */
+    /**
+     * RN06: cada item precisa caber na quantidade livre do lote (disponível - reservada).
+     * Ao aprovar, a quantidade fica reservada para este pedido e some do que as entidades podem pedir.
+     */
     public SolicitacaoResponse aprovar(Integer adminId, Integer id) {
         Solicitacao solicitacao = solicitacaoRepository.findByIdForUpdate(id).orElseThrow(NaoEncontradoException::new);
         exigirSituacao(solicitacao, SituacaoSolicitacao.PENDENTE, "Esta solicitação não está pendente.");
-        verificarItens(solicitacao, solicitacao.getItens().stream()
-                .collect(Collectors.toMap(i -> i.getAlimento().getId(), ItemSolicitacao::getAlimento, (a, b) -> a)));
+
+        Map<Integer, Alimento> lotes = travarLotes(solicitacao);
+        verificarItens(solicitacao, lotes, Alimento::getQtdLivre);
+        for (ItemSolicitacao item : solicitacao.getItens()) {
+            Alimento lote = lotes.get(item.getAlimento().getId());
+            lote.setQtdReservada(lote.getQtdReservada().add(item.getQuantidade()));
+        }
         solicitacao.setSituacao(SituacaoSolicitacao.APROVADA);
         solicitacao.setAvaliadaPor(usuarioRepository.getReferenceById(adminId));
         return SolicitacaoResponse.of(solicitacaoRepository.save(solicitacao));
     }
 
+    /** Recusa um pedido pendente ou aprovado; se estava aprovado, libera a reserva. */
     public SolicitacaoResponse recusar(Integer adminId, Integer id, String motivo) {
         Solicitacao solicitacao = solicitacaoRepository.findByIdForUpdate(id).orElseThrow(NaoEncontradoException::new);
-        exigirSituacao(solicitacao, SituacaoSolicitacao.PENDENTE, "Esta solicitação não está pendente.");
+        if (solicitacao.getSituacao() != SituacaoSolicitacao.PENDENTE
+                && solicitacao.getSituacao() != SituacaoSolicitacao.APROVADA) {
+            throw new NegocioException("Só é possível recusar solicitações pendentes ou aprovadas.");
+        }
+        if (solicitacao.getSituacao() == SituacaoSolicitacao.APROVADA) {
+            Map<Integer, Alimento> lotes = travarLotes(solicitacao);
+            for (ItemSolicitacao item : solicitacao.getItens()) {
+                Alimento lote = lotes.get(item.getAlimento().getId());
+                lote.setQtdReservada(lote.getQtdReservada().subtract(item.getQuantidade()).max(BigDecimal.ZERO));
+            }
+        }
         solicitacao.setSituacao(SituacaoSolicitacao.RECUSADA);
         solicitacao.setMotivoRecusa(motivo);
         solicitacao.setAvaliadaPor(usuarioRepository.getReferenceById(adminId));
         return SolicitacaoResponse.of(solicitacaoRepository.save(solicitacao));
     }
 
-    /** RN06 revalidada na entrega, com lock pessimista nos lotes, e baixa no estoque. */
+    /** Entrega consome a reserva: baixa no estoque físico e libera a quantidade reservada. */
     public SolicitacaoResponse entregar(Integer id) {
         Solicitacao solicitacao = solicitacaoRepository.findByIdForUpdate(id).orElseThrow(NaoEncontradoException::new);
         exigirSituacao(solicitacao, SituacaoSolicitacao.APROVADA, "Somente solicitações aprovadas podem ser entregues.");
 
-        Set<Integer> ids = solicitacao.getItens().stream()
-                .map(i -> i.getAlimento().getId()).collect(Collectors.toCollection(TreeSet::new));
-        Map<Integer, Alimento> lotes = alimentoRepository.findAllByIdForUpdate(ids).stream()
-                .collect(Collectors.toMap(Alimento::getId, Function.identity()));
-        verificarItens(solicitacao, lotes);
+        Map<Integer, Alimento> lotes = travarLotes(solicitacao);
+        // a reserva garante a quantidade; só falha se o lote foi retirado/corrigido depois da aprovação
+        verificarItens(solicitacao, lotes, Alimento::getQtdReservada);
 
         for (ItemSolicitacao item : solicitacao.getItens()) {
             Alimento lote = lotes.get(item.getAlimento().getId());
+            lote.setQtdReservada(lote.getQtdReservada().subtract(item.getQuantidade()));
             lote.setQtdDisponivel(lote.getQtdDisponivel().subtract(item.getQuantidade()));
         }
         solicitacao.setSituacao(SituacaoSolicitacao.ENTREGUE);
@@ -138,7 +157,16 @@ public class SolicitacaoService {
         return SolicitacaoResponse.of(solicitacaoRepository.save(solicitacao));
     }
 
-    private void verificarItens(Solicitacao solicitacao, Map<Integer, Alimento> lotes) {
+    /** Lock pessimista nos lotes do pedido, sempre na mesma ordem (por id) para evitar deadlock. */
+    private Map<Integer, Alimento> travarLotes(Solicitacao solicitacao) {
+        Set<Integer> ids = solicitacao.getItens().stream()
+                .map(i -> i.getAlimento().getId()).collect(Collectors.toCollection(TreeSet::new));
+        return alimentoRepository.findAllByIdForUpdate(ids).stream()
+                .collect(Collectors.toMap(Alimento::getId, Function.identity()));
+    }
+
+    private void verificarItens(Solicitacao solicitacao, Map<Integer, Alimento> lotes,
+                                Function<Alimento, BigDecimal> limite) {
         LocalDate hoje = DataUtil.hoje();
         List<String> erros = new ArrayList<>();
         for (ItemSolicitacao item : solicitacao.getItens()) {
@@ -147,8 +175,8 @@ public class SolicitacaoService {
                 erros.add("O lote " + item.getAlimento().getNome() + " não está mais disponível.");
             } else if (lote.getValidade().isBefore(hoje)) {
                 erros.add("O lote " + lote.getNome() + " está vencido.");
-            } else if (item.getQuantidade().compareTo(lote.getQtdDisponivel()) > 0) {
-                erros.add(mensagemQuantidade(lote, item.getQuantidade()));
+            } else if (item.getQuantidade().compareTo(limite.apply(lote)) > 0) {
+                erros.add(mensagemQuantidade(lote, item.getQuantidade(), limite.apply(lote)));
             }
         }
         if (!erros.isEmpty()) {
@@ -166,17 +194,17 @@ public class SolicitacaoService {
             Alimento lote = alimentoRepository.findDisponivelById(item.alimentoId(), hoje)
                     .orElseThrow(() -> new NegocioException(
                             "O alimento " + item.alimentoId() + " não está disponível no estoque."));
-            if (item.quantidade().compareTo(lote.getQtdDisponivel()) > 0) {
-                throw new NegocioException(mensagemQuantidade(lote, item.quantidade()));
+            if (item.quantidade().compareTo(lote.getQtdLivre()) > 0) {
+                throw new NegocioException(mensagemQuantidade(lote, item.quantidade(), lote.getQtdLivre()));
             }
             solicitacao.adicionarItem(ItemSolicitacao.builder().alimento(lote).quantidade(item.quantidade()).build());
         }
     }
 
-    private String mensagemQuantidade(Alimento lote, java.math.BigDecimal pedida) {
+    private String mensagemQuantidade(Alimento lote, BigDecimal pedida, BigDecimal disponivel) {
         String unidade = lote.getUnidade().name().toLowerCase();
         return "Quantidade pedida de " + lote.getNome() + " (" + Quantidades.texto(pedida) + " " + unidade
-                + ") maior que a disponível (" + Quantidades.texto(lote.getQtdDisponivel()) + " " + unidade + ").";
+                + ") maior que a disponível (" + Quantidades.texto(disponivel) + " " + unidade + ").";
     }
 
     private Solicitacao propria(Integer usuarioId, Integer id) {

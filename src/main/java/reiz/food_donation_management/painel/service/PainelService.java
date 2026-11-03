@@ -54,7 +54,7 @@ public class PainelService {
                 painel.put("solicitacoesPendentes", solicitacaoRepository.countByEntidadeUsuarioIdAndSituacao(id, SituacaoSolicitacao.PENDENTE));
                 painel.put("solicitacoesAprovadas", solicitacaoRepository.countByEntidadeUsuarioIdAndSituacao(id, SituacaoSolicitacao.APROVADA));
                 painel.put("solicitacoesEntregues", solicitacaoRepository.countByEntidadeUsuarioIdAndSituacao(id, SituacaoSolicitacao.ENTREGUE));
-                painel.put("lotesDisponiveis", alimentoRepository.countEstoque(hoje));
+                painel.put("lotesDisponiveis", alimentoRepository.countEstoqueLivre(hoje));
             }
         }
         return painel;

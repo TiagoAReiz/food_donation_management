@@ -32,7 +32,7 @@ function ListaLotes({
 
   function abrir(i: EstoqueItemResponse) {
     setEditando(i);
-    setValor(String(i.qtdDisponivel).replace(".", ","));
+    setValor(String(i.qtdEmEstoque).replace(".", ","));
     setErro("");
   }
 
@@ -59,8 +59,14 @@ function ListaLotes({
                 {CATEGORIAS[i.categoria]} · doação nº {i.doacaoId}
               </p>
               <p className="mt-2 text-xl font-extrabold text-brand-800">
-                {formatarQtd(i.qtdDisponivel, i.unidade)}
+                {formatarQtd(i.qtdEmEstoque, i.unidade)}
               </p>
+              {i.qtdReservada > 0 && (
+                <p className="text-base text-ink-soft">
+                  <strong className="text-blue-800">{formatarQtd(i.qtdReservada, i.unidade)} reservado</strong> para
+                  pedidos aprovados · {formatarQtd(i.qtdDisponivel, i.unidade)} livre
+                </p>
+              )}
               <div className="mt-2">
                 <ValidadeBadge validade={i.validade} />
               </div>
@@ -104,7 +110,7 @@ function ListaLotes({
               {siglaUnidade(editando.unidade)}.
             </p>
             <Input
-              label="Quantidade disponível"
+              label="Quantidade em estoque"
               inputMode="decimal"
               value={valor}
               onChange={(e) => {
@@ -112,7 +118,11 @@ function ListaLotes({
                 setErro("");
               }}
               erro={erro}
-              dica="Não pode ser maior que a quantidade doada."
+              dica={
+                editando.qtdReservada > 0
+                  ? `Não pode ser maior que a quantidade doada nem menor que os ${formatarQtd(editando.qtdReservada, editando.unidade)} reservados.`
+                  : "Não pode ser maior que a quantidade doada."
+              }
             />
           </>
         )}
