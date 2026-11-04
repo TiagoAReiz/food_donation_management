@@ -11,13 +11,15 @@ Sistema web para registrar doações de alimentos, controlar o estoque e atender
 ## Como rodar
 
 ```bash
-docker compose up -d --build
+docker compose up --watch
 ```
 
 - Frontend: http://localhost:3000
 - API: http://localhost:8080/api
 
-Para desenvolver localmente, suba só o banco (`docker compose up -d postgres`), rode o backend com `./mvnw spring-boot:run` e o frontend com `cd frontend && npm install && npm run dev`.
+O ambiente roda com hot reload: deixe o terminal aberto enquanto desenvolve. Alterações em `frontend/` aparecem na hora via HMR do Next; alterações em `src/` são recompiladas e o Spring DevTools reinicia o backend (alguns segundos). Mudanças no `pom.xml` ou `package.json` reconstroem a imagem automaticamente.
+
+Alternativamente, para desenvolver sem Docker, suba só o banco (`docker compose up -d postgres`), rode o backend com `./mvnw spring-boot:run` e o frontend com `cd frontend && npm install && npm run dev`.
 
 ## Usuários de teste
 

@@ -5,6 +5,13 @@ RUN mvn -B -q dependency:go-offline
 COPY src ./src
 RUN mvn -B -q package -DskipTests
 
+# Estágio de desenvolvimento (docker-compose.dev.yml): roda com devtools,
+# que reinicia a aplicação quando target/classes muda.
+FROM build AS dev
+ENV TZ=America/Sao_Paulo
+EXPOSE 8080
+CMD ["mvn", "-B", "-q", "spring-boot:run"]
+
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 ENV TZ=America/Sao_Paulo

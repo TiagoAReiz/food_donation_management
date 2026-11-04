@@ -34,9 +34,9 @@ export const NAVEGACAO: Record<Perfil, ItemNav[]> = {
   ],
   ADMINISTRADOR: [
     { href: "/admin", texto: "Início", icone: Home },
-    { href: "/admin/doacoes", texto: "Doações", icone: HandHeart },
+    { href: "/admin/doacoes", texto: "Doar", icone: HandHeart },
     { href: "/admin/estoque", texto: "Estoque", icone: Warehouse },
-    { href: "/admin/solicitacoes", texto: "Pedidos", icone: PackageSearch },
+    { href: "/admin/solicitacoes", texto: "Doações", icone: PackageSearch },
     { href: "/admin/entidades", texto: "Entidades", icone: Building2 },
     { href: "/admin/doadores", texto: "Doadores", icone: Users },
     { href: "/admin/administradores", texto: "Administradores", icone: ShieldCheck },
